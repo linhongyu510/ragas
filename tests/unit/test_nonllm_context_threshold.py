@@ -36,9 +36,12 @@ class TestNonLLMThresholdConsistency:
         # recall: numerator/denom -> 1/1 == 1.0 when the boundary counts.
         recall_relevant = recall._compute_score(boundary) > 0
         # precision: average precision over a single relevant item == 1.0.
-        precision_relevant = precision._calculate_average_precision(
-            [1 if s >= threshold else 0 for s in boundary]
-        ) > 0
+        precision_relevant = (
+            precision._calculate_average_precision(
+                [1 if s >= threshold else 0 for s in boundary]
+            )
+            > 0
+        )
 
         assert recall_relevant == precision_relevant == True  # noqa: E712
 
