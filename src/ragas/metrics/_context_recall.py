@@ -16,6 +16,7 @@ from ragas.metrics.base import (
     SingleTurnMetric,
     ensembler,
 )
+from ragas.metrics.utils import meets_threshold
 from ragas.prompt import PydanticPrompt
 from ragas.run_config import RunConfig
 
@@ -216,12 +217,11 @@ class NonLLMContextRecall(SingleTurnMetric):
         return await self._single_turn_ascore(SingleTurnSample(**row), callbacks)
 
     def _compute_score(self, verdict_list: t.List[float]) -> float:
-        # Use `>=` so a context whose similarity is exactly at the threshold
-        # is treated as relevant, matching NonLLMContextPrecisionWithReference
-        # (which also uses `>=`). Both metrics share the same default
-        # threshold (0.5) and NonLLMStringSimilarity distance measure, so they
-        # must apply the threshold consistently (see issue #2777).
-        response = [1 if score >= self.threshold else 0 for score in verdict_list]
+        # Shared boundary rule, so recall cannot drift from precision again
+        # (issue #2777).
+        response = [
+            1 if meets_threshold(score, self.threshold) else 0 for score in verdict_list
+        ]
         denom = len(response)
         numerator = sum(response)
         score = numerator / denom if denom > 0 else np.nan

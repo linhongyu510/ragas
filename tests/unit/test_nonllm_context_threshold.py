@@ -8,10 +8,13 @@ must be classified as relevant by both metrics. Previously recall used a strict
 precision but not for recall.
 """
 
+import sys
+
 import numpy as np
 
 from ragas.metrics._context_precision import NonLLMContextPrecisionWithReference
 from ragas.metrics._context_recall import NonLLMContextRecall
+from ragas.metrics.utils import meets_threshold
 
 
 class TestNonLLMThresholdConsistency:
@@ -48,3 +51,51 @@ class TestNonLLMThresholdConsistency:
     def test_recall_empty_returns_nan(self):
         recall = NonLLMContextRecall(threshold=0.5)
         assert np.isnan(recall._compute_score([]))
+
+
+class TestSharedThresholdHelper:
+    """The two metrics agree because they share one rule, not by coincidence."""
+
+    def test_helper_is_inclusive_at_the_boundary(self):
+        assert meets_threshold(0.5, 0.5) is True
+        assert meets_threshold(0.51, 0.5) is True
+        assert meets_threshold(0.49, 0.5) is False
+
+    def test_both_metrics_bind_the_same_rule(self):
+        """Both modules must resolve to the one definition, not a private copy.
+
+        Equal outputs only show the two agree today. Identity shows they
+        cannot diverge: a future edit to either metric's boundary has to go
+        through this function.
+        """
+        # Fetched from sys.modules: `ragas.metrics._context_recall` resolves
+        # to the re-exported class, not the module that defines it.
+        recall_module = sys.modules["ragas.metrics._context_recall"]
+        precision_module = sys.modules["ragas.metrics._context_precision"]
+
+        assert recall_module.meets_threshold is meets_threshold
+        assert precision_module.meets_threshold is meets_threshold
+
+    def test_recall_follows_the_shared_rule(self, monkeypatch):
+        """Recall reads the rule at call time rather than inlining it."""
+        recall_module = sys.modules["ragas.metrics._context_recall"]
+
+        monkeypatch.setattr(
+            recall_module, "meets_threshold", lambda score, threshold: False
+        )
+        # Nothing clears an always-false rule, so the boundary score that
+        # normally counts must now be dropped.
+        assert NonLLMContextRecall(threshold=0.5)._compute_score([0.5]) == 0.0
+
+    def test_no_metric_reimplements_the_boundary(self):
+        """Neither NonLLM metric may compare against self.threshold directly."""
+        from pathlib import Path
+
+        for name in (
+            "ragas.metrics._context_recall",
+            "ragas.metrics._context_precision",
+        ):
+            module = sys.modules[name]
+            source = Path(module.__file__).read_text(encoding="utf-8")
+            assert ">= self.threshold" not in source
+            assert "> self.threshold" not in source
