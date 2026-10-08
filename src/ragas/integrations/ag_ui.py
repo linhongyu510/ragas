@@ -633,10 +633,7 @@ class AGUIEventCollector:
                     tool_calls = []
                     for tc in msg.tool_calls:
                         tc_obj = t.cast(Any, tc)
-                        name = t.cast(str, getattr(tc_obj, "name", "unknown_tool"))
-                        raw_args = getattr(tc_obj, "args", {})
-                        if not isinstance(raw_args, dict):
-                            raw_args = {"raw_args": raw_args}
+                        name, raw_args = self._extract_tool_call(tc_obj)
                         tool_calls.append(
                             ToolCall(
                                 name=name,
@@ -654,6 +651,41 @@ class AGUIEventCollector:
                 logger.debug(
                     f"Skipping message with unknown type: {type(msg).__name__}"
                 )
+
+    @staticmethod
+    def _extract_tool_call(tc_obj: Any) -> tuple[str, Dict[str, Any]]:
+        """Extract the tool name and arguments from an AG-UI ToolCall.
+
+        AG-UI's ``ToolCall`` nests the tool name and arguments under ``function``
+        (``FunctionCall.name`` and ``FunctionCall.arguments``, where ``arguments``
+        is a JSON-encoded string). Reading flat ``name``/``args`` attributes
+        always falls back to ``unknown_tool``/``{}``, so the snapshot path must
+        read the nested shape.
+
+        A flat fallback is kept for objects that do not expose ``function``.
+        """
+        function = getattr(tc_obj, "function", None)
+        if function is not None:
+            name = t.cast(str, getattr(function, "name", "unknown_tool"))
+            raw_arguments = getattr(function, "arguments", None)
+            if isinstance(raw_arguments, dict):
+                raw_args: Dict[str, Any] = raw_arguments
+            elif isinstance(raw_arguments, str) and raw_arguments:
+                try:
+                    raw_args = json.loads(raw_arguments)
+                except json.JSONDecodeError:
+                    logger.error(
+                        f"Failed to parse tool call arguments for {name}: {raw_arguments}"
+                    )
+                    raw_args = {"raw_args": raw_arguments}
+            else:
+                raw_args = {}
+        else:
+            name = t.cast(str, getattr(tc_obj, "name", "unknown_tool"))
+            raw_args = getattr(tc_obj, "args", {})
+            if not isinstance(raw_args, dict):
+                raw_args = {"raw_args": raw_args}
+        return name, raw_args
 
     def get_messages(self) -> List[Union[HumanMessage, AIMessage, ToolMessage]]:
         """
@@ -987,7 +1019,6 @@ async def call_ag_ui_endpoint(
     with content type "text/event-stream". Each event should be in the format:
 
         data: {"type": "...", ...}\\n\\n
-
     The function will parse the SSE stream and deserialize each event
     using AG-UI's RunAgentInput model.
     """
@@ -1308,7 +1339,6 @@ async def run_ag_ui_row(
     -------
     Basic usage with @experiment::
 
-        from ragas import experiment
         from ragas.integrations.ag_ui import run_ag_ui_row
 
         @experiment()
