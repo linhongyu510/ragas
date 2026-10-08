@@ -1019,6 +1019,8 @@ async def call_ag_ui_endpoint(
     with content type "text/event-stream". Each event should be in the format:
 
         data: {"type": "...", ...}\\n\\n
+
+
     The function will parse the SSE stream and deserialize each event
     using AG-UI's RunAgentInput model.
     """
