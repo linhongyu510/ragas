@@ -13,6 +13,7 @@ try:
     from ag_ui.core import (
         AssistantMessage,
         EventType,
+        FunctionCall,
         MessagesSnapshotEvent,
         RunFinishedEvent,
         RunStartedEvent,
@@ -22,6 +23,7 @@ try:
         TextMessageContentEvent,
         TextMessageEndEvent,
         TextMessageStartEvent,
+        ToolCall as AGUIToolCall,
         ToolCallArgsEvent,
         ToolCallChunkEvent,
         ToolCallEndEvent,
@@ -234,6 +236,68 @@ def test_snapshot_with_metadata():
     assert messages[0].metadata is not None
     assert "message_id" in messages[0].metadata
     assert messages[0].metadata["message_id"] == "msg-1"
+
+
+def test_snapshot_tool_call_name_and_arguments_recovered():
+    """Snapshot conversion must read nested ToolCall.function.name/arguments.
+
+    Regression for #3010: reading flat name/args attributes always fell back to
+    unknown_tool/{} because AG-UI's ToolCall nests them under ``function``.
+    """
+    from ragas.integrations.ag_ui import convert_messages_snapshot, extract_tool_calls
+
+    snapshot = MessagesSnapshotEvent(
+        messages=[
+            AssistantMessage(
+                id="a1",
+                content="Checking the weather",
+                tool_calls=[
+                    AGUIToolCall(
+                        id="tc-1",
+                        function=FunctionCall(
+                            name="get_weather", arguments='{"city": "SF", "units": "c"}'
+                        ),
+                    )
+                ],
+            )
+        ]
+    )
+
+    messages = convert_messages_snapshot(snapshot)
+    tool_calls = extract_tool_calls(messages)
+
+    assert len(tool_calls) == 1
+    assert tool_calls[0].name == "get_weather"
+    assert tool_calls[0].args == {"city": "SF", "units": "c"}
+
+
+def test_snapshot_tool_call_invalid_arguments_falls_back():
+    """Malformed tool arguments should degrade gracefully instead of raising."""
+    from ragas.integrations.ag_ui import convert_messages_snapshot
+
+    snapshot = MessagesSnapshotEvent(
+        messages=[
+            AssistantMessage(
+                id="a1",
+                content="Checking",
+                tool_calls=[
+                    AGUIToolCall(
+                        id="tc-1",
+                        function=FunctionCall(
+                            name="broken_tool", arguments="{not valid json"
+                        ),
+                    )
+                ],
+            )
+        ]
+    )
+
+    messages = convert_messages_snapshot(snapshot)
+    tool_calls = messages[0].tool_calls
+
+    assert tool_calls is not None
+    assert tool_calls[0].name == "broken_tool"
+    assert tool_calls[0].args == {"raw_args": "{not valid json"}
 
 
 def test_non_message_events_filtered():
