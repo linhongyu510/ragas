@@ -1,1 +1,1 @@
-tbc-agui
+PLACEHOLDER_AGUI_FULL
