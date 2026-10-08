@@ -1210,7 +1210,7 @@ def build_sample(
     Parameters
     ----------
     user_input : str or List[Message]
-        The original input - either a string or conversation list.
+        The original user input - either a string or conversation list.
     messages : List[Message]
         Agent response messages from convert_to_ragas_messages().
     reference : str, optional
