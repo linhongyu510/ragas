@@ -1339,6 +1339,7 @@ async def run_ag_ui_row(
     -------
     Basic usage with @experiment::
 
+        from ragas import experiment
         from ragas.integrations.ag_ui import run_ag_ui_row
 
         @experiment()
